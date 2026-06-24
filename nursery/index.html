@@ -223,6 +223,7 @@
   $('regForm').addEventListener('submit', function(ev){
     ev.preventDefault();
     if(!validateForm()) return;
+    try{ if(navigator.clipboard) navigator.clipboard.writeText(noteText()).catch(function(){}); }catch(e){}
     shareOrSave();
   });
 
@@ -244,12 +245,13 @@
   }
 
   function pdfName(){ return `استمارة-${val('childName')||'طفل'}.pdf`; }
+  function noteText(){ return `السلام عليكم، مرفق استمارة تقديم لحضانة الحافظ للغات (ملف PDF) باسم الطفل: ${val('childName')}`; }
 
   function shareOrSave(){
     return buildPdf().then(pdf=>{
       if(!pdf) return;
       const fname=pdfName();
-      const note=`استمارة تقديم لحضانة الحافظ للغات — باسم الطفل: ${val('childName')}`;
+      const note=noteText();
       const file=new File([pdf.output('blob')], fname, {type:'application/pdf'});
       if(navigator.canShare && navigator.canShare({files:[file]})){
         return navigator.share({ files:[file], title:'استمارة تقديم الحضانة', text:note })
@@ -303,10 +305,19 @@
     return el;
   }
 
+  function waitForImages(el){
+    const imgs=Array.prototype.slice.call(el.querySelectorAll('img'));
+    return Promise.all(imgs.map(function(img){
+      if(img.complete && img.naturalWidth>0) return Promise.resolve();
+      return new Promise(function(res){ img.onload=img.onerror=function(){res();}; });
+    }));
+  }
+
   function buildPdf(){
     const el=buildReport();
     return document.fonts.ready
-      .then(()=>html2canvas(el,{scale:2,backgroundColor:'#ffffff'}))
+      .then(()=>waitForImages(el))
+      .then(()=>html2canvas(el,{scale:2,backgroundColor:'#ffffff',useCORS:true,imageTimeout:15000}))
       .then(canvas=>{
         if(el.parentNode) document.body.removeChild(el);
         const { jsPDF }=window.jspdf;

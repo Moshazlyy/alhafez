@@ -213,6 +213,7 @@
   $('regForm').addEventListener('submit', function(ev){
     ev.preventDefault();
     if(!validateForm()) return;
+    try{ if(navigator.clipboard) navigator.clipboard.writeText(noteText()).catch(function(){}); }catch(e){}
     shareOrSave();
   });
 
@@ -222,12 +223,13 @@
   });
 
   function pdfName(){ return `استمارة-قرآن-${val('fullName')||'طالب'}.pdf`; }
+  function noteText(){ return `السلام عليكم، مرفق استمارة التقديم بمدرسة الحافظ لتحفيظ القرآن (ملف PDF) باسم: ${val('fullName')}`; }
 
   function shareOrSave(){
     return buildPdf().then(pdf=>{
       if(!pdf) return;
       const fname=pdfName();
-      const note=`استمارة التقديم بمدرسة الحافظ لتحفيظ القرآن — باسم: ${val('fullName')}`;
+      const note=noteText();
       const file=new File([pdf.output('blob')], fname, {type:'application/pdf'});
       if(navigator.canShare && navigator.canShare({files:[file]})){
         return navigator.share({ files:[file], title:'استمارة التقديم', text:note })
@@ -275,10 +277,19 @@
     return el;
   }
 
+  function waitForImages(el){
+    const imgs=Array.prototype.slice.call(el.querySelectorAll('img'));
+    return Promise.all(imgs.map(function(img){
+      if(img.complete && img.naturalWidth>0) return Promise.resolve();
+      return new Promise(function(res){ img.onload=img.onerror=function(){res();}; });
+    }));
+  }
+
   function buildPdf(){
     const el=buildReport();
     return document.fonts.ready
-      .then(()=>html2canvas(el,{scale:2,backgroundColor:'#fffdf7'}))
+      .then(()=>waitForImages(el))
+      .then(()=>html2canvas(el,{scale:2,backgroundColor:'#fffdf7',useCORS:true,imageTimeout:15000}))
       .then(canvas=>{
         if(el.parentNode) document.body.removeChild(el);
         const { jsPDF }=window.jspdf;
