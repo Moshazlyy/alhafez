@@ -222,28 +222,14 @@
 
   $('regForm').addEventListener('submit', function(ev){
     ev.preventDefault();
-    let ok=true;
-    [['childName',v=>v.trim().length>=3],
-     ['birthDate',v=>!!v],
-     ['address',v=>v.trim().length>=3],
-     ['whatsapp',v=>/^[0-9+]{8,}$/.test(v.trim())]
-    ].forEach(([id,test])=>{
-      const el=$(id);
-      const bad=!test(el.value);
-      showErr(el,bad);
-      if(bad) ok=false;
-    });
-    if(!ok){ window.scrollTo({top:0,behavior:'smooth'}); return; }
-
-    makePdf().then(()=>{
-      const note = `السلام عليكم، مرفق استمارة تقديم لحضانة الحافظ للغات (ملف PDF) باسم الطفل: ${$('childName').value}`;
-      window.open(`https://wa.me/${NURSERY_WHATSAPP}?text=${encodeURIComponent(note)}`,'_blank');
-    });
+    if(!validateForm()) return;
+    shareOrSave();
   });
 
   // زر تحميل PDF فقط
   $('pdfOnlyBtn').addEventListener('click', function(){
-    if(validateForm()) makePdf();
+    if(!validateForm()) return;
+    buildPdf().then(pdf=>{ if(pdf) pdf.save(pdfName()); }).catch(()=>{});
   });
 
   function val(id){ return ($(id).value||'').trim(); }
@@ -257,26 +243,48 @@
     return ok;
   }
 
+  function pdfName(){ return `استمارة-${val('childName')||'طفل'}.pdf`; }
+
+  function shareOrSave(){
+    return buildPdf().then(pdf=>{
+      if(!pdf) return;
+      const fname=pdfName();
+      const note=`استمارة تقديم لحضانة الحافظ للغات — باسم الطفل: ${val('childName')}`;
+      const file=new File([pdf.output('blob')], fname, {type:'application/pdf'});
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        return navigator.share({ files:[file], title:'استمارة تقديم الحضانة', text:note })
+          .catch(e=>{ if(e && e.name==='AbortError') return; downloadAndWhatsApp(pdf,fname,note); });
+      }
+      downloadAndWhatsApp(pdf,fname,note);
+    }).catch(()=>{});
+  }
+
+  function downloadAndWhatsApp(pdf,fname,note){
+    pdf.save(fname);
+    const msg=note+'\n\n(تم تنزيل ملف الـPDF — برجاء إرفاقه في المحادثة من زر المشبك 📎)';
+    window.open(`https://wa.me/${NURSERY_WHATSAPP}?text=${encodeURIComponent(msg)}`,'_blank');
+  }
+
   // ===== بناء وتوليد ملف PDF =====
   function buildReport(){
     const logoSrc = (document.querySelector('.header .logo')||{}).src || '';
     const photoShown = $('preview').style.display==='block';
     const photoSrc = photoShown ? $('preview').src : '';
     const row=(label,value)=>`<tr>
-      <td style="padding:11px 14px;font-weight:700;background:#e1f5ee;width:36%;border:1px solid #cfe6dd;color:#0f6e56">${label}</td>
-      <td style="padding:11px 14px;border:1px solid #cfe6dd">${value||'—'}</td></tr>`;
+      <td style="padding:15px 18px;font-weight:700;background:#e1f5ee;width:36%;border:1px solid #cfe6dd;color:#0f6e56;font-size:19px">${label}</td>
+      <td style="padding:15px 18px;border:1px solid #cfe6dd;font-size:19px">${value||'—'}</td></tr>`;
     const el=document.createElement('div');
-    el.style.cssText='position:fixed;top:-9999px;right:0;width:760px;background:#fff;padding:36px;font-family:Cairo,sans-serif;direction:rtl;color:#1f2421';
+    el.style.cssText='position:fixed;top:-9999px;right:0;width:760px;background:#fff;padding:38px;font-family:Cairo,sans-serif;direction:rtl;color:#1f2421';
     el.innerHTML=`
-      <div style="display:flex;align-items:center;gap:16px;border-bottom:3px solid #0f6e56;padding-bottom:16px;margin-bottom:22px">
+      <div style="display:flex;align-items:center;gap:16px;border-bottom:3px solid #0f6e56;padding-bottom:16px;margin-bottom:24px">
         <div style="flex:1;text-align:center">
-          <div style="font-size:27px;font-weight:700;color:#0f6e56">استمارة تقديم لحضانة الحافظ للغات</div>
-          <div style="font-size:15px;color:#6b7069;margin-top:5px">العام الدراسي الجديد 2027</div>
+          <div style="font-size:30px;font-weight:700;color:#0f6e56">استمارة تقديم لحضانة الحافظ للغات</div>
+          <div style="font-size:17px;color:#6b7069;margin-top:6px">العام الدراسي الجديد 2027</div>
         </div>
-        ${logoSrc?`<img src="${logoSrc}" style="width:92px;height:92px;object-fit:contain">`:''}
+        ${logoSrc?`<img src="${logoSrc}" style="width:100px;height:100px;object-fit:contain">`:''}
       </div>
-      <div style="display:flex;gap:22px;align-items:flex-start">
-        <table style="flex:1;border-collapse:collapse;font-size:15px;width:100%">
+      <div style="display:flex;gap:24px;align-items:flex-start">
+        <table style="flex:1;border-collapse:collapse;width:100%">
           ${row('اسم الطفل', val('childName'))}
           ${row('تاريخ الميلاد', val('birthDate'))}
           ${row('السن', val('ageCalc'))}
@@ -286,28 +294,30 @@
           ${row('وظيفة الأب', val('dadJob'))}
           ${row('وظيفة الأم', val('momJob'))}
         </table>
-        ${photoSrc?`<div style="text-align:center"><img src="${photoSrc}" style="width:150px;height:170px;object-fit:cover;border:3px solid #0f6e56;border-radius:8px"><div style="font-size:12px;color:#6b7069;margin-top:6px">صورة الطفل</div></div>`:''}
+        ${photoSrc?`<div style="text-align:center"><img src="${photoSrc}" style="width:170px;height:195px;object-fit:cover;border:3px solid #0f6e56;border-radius:8px"><div style="font-size:14px;color:#6b7069;margin-top:8px">صورة الطفل</div></div>`:''}
       </div>
-      <div style="margin-top:26px;font-size:13px;color:#6b7069;text-align:center;border-top:1px solid #dcdfd8;padding-top:12px">
+      <div style="margin-top:30px;font-size:15px;color:#6b7069;text-align:center;border-top:1px solid #dcdfd8;padding-top:14px">
         تم إنشاء الاستمارة بتاريخ ${new Date().toLocaleDateString('ar-EG')}
       </div>`;
     document.body.appendChild(el);
     return el;
   }
 
-  function makePdf(){
+  function buildPdf(){
     const el=buildReport();
-    return html2canvas(el,{scale:2,backgroundColor:'#ffffff'}).then(canvas=>{
-      document.body.removeChild(el);
-      const { jsPDF }=window.jspdf;
-      const pdf=new jsPDF('p','mm','a4');
-      const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
-      let imgW=pw-20, imgH=canvas.height*imgW/canvas.width;
-      if(imgH>ph-20){ imgH=ph-20; imgW=canvas.width*imgH/canvas.height; }
-      const x=(pw-imgW)/2;
-      pdf.addImage(canvas.toDataURL('image/jpeg',0.95),'JPEG',x,10,imgW,imgH);
-      pdf.save(`استمارة-${val('childName')||'طفل'}.pdf`);
-    }).catch(err=>{ if(el.parentNode) document.body.removeChild(el); alert('حصل خطأ أثناء إنشاء الـPDF: '+err.message); });
+    return document.fonts.ready
+      .then(()=>html2canvas(el,{scale:2,backgroundColor:'#ffffff'}))
+      .then(canvas=>{
+        if(el.parentNode) document.body.removeChild(el);
+        const { jsPDF }=window.jspdf;
+        const pdf=new jsPDF('p','mm','a4');
+        const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
+        let imgW=pw-20, imgH=canvas.height*imgW/canvas.width;
+        if(imgH>ph-20){ imgH=ph-20; imgW=canvas.width*imgH/canvas.height; }
+        pdf.addImage(canvas.toDataURL('image/jpeg',0.95),'JPEG',(pw-imgW)/2,10,imgW,imgH);
+        return pdf;
+      })
+      .catch(err=>{ if(el.parentNode) document.body.removeChild(el); alert('حصل خطأ أثناء إنشاء الـPDF: '+(err&&err.message||err)); throw err; });
   }
 </script>
 </body>

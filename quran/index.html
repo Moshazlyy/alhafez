@@ -213,30 +213,52 @@
   $('regForm').addEventListener('submit', function(ev){
     ev.preventDefault();
     if(!validateForm()) return;
-    makePdf().then(()=>{
-      const note=`السلام عليكم، مرفق استمارة التقديم بمدرسة الحافظ لتحفيظ القرآن (ملف PDF) باسم: ${val('fullName')}`;
-      window.open(`https://wa.me/${SCHOOL_WHATSAPP}?text=${encodeURIComponent(note)}`,'_blank');
-    });
+    shareOrSave();
   });
 
-  $('pdfOnlyBtn').addEventListener('click', function(){ if(validateForm()) makePdf(); });
+  $('pdfOnlyBtn').addEventListener('click', function(){
+    if(!validateForm()) return;
+    buildPdf().then(pdf=>{ if(pdf) pdf.save(pdfName()); }).catch(()=>{});
+  });
+
+  function pdfName(){ return `استمارة-قرآن-${val('fullName')||'طالب'}.pdf`; }
+
+  function shareOrSave(){
+    return buildPdf().then(pdf=>{
+      if(!pdf) return;
+      const fname=pdfName();
+      const note=`استمارة التقديم بمدرسة الحافظ لتحفيظ القرآن — باسم: ${val('fullName')}`;
+      const file=new File([pdf.output('blob')], fname, {type:'application/pdf'});
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        return navigator.share({ files:[file], title:'استمارة التقديم', text:note })
+          .catch(e=>{ if(e && e.name==='AbortError') return; downloadAndWhatsApp(pdf,fname,note); });
+      }
+      downloadAndWhatsApp(pdf,fname,note);
+    }).catch(()=>{});
+  }
+
+  function downloadAndWhatsApp(pdf,fname,note){
+    pdf.save(fname);
+    const msg=note+'\n\n(تم تنزيل ملف الـPDF — برجاء إرفاقه في المحادثة من زر المشبك 📎)';
+    window.open(`https://wa.me/${SCHOOL_WHATSAPP}?text=${encodeURIComponent(msg)}`,'_blank');
+  }
 
   function buildReport(){
     const logoSrc=(document.querySelector('.head .logo')||{}).src||'';
     const photoShown=$('preview').style.display==='block';
     const photoSrc=photoShown?$('preview').src:'';
-    const row=(l,v)=>`<tr><td style="padding:11px 14px;font-weight:700;background:#f3ecd8;width:38%;border:1px solid #e6dcc1;color:#0b5d3b">${l}</td><td style="padding:11px 14px;border:1px solid #e6dcc1">${v||'—'}</td></tr>`;
+    const row=(l,v)=>`<tr><td style="padding:15px 18px;font-weight:700;background:#f3ecd8;width:38%;border:1px solid #e6dcc1;color:#0b5d3b;font-size:19px">${l}</td><td style="padding:15px 18px;border:1px solid #e6dcc1;font-size:19px">${v||'—'}</td></tr>`;
     const el=document.createElement('div');
-    el.style.cssText='position:fixed;top:-9999px;right:0;width:760px;background:#fffdf7;padding:34px;font-family:Cairo,sans-serif;direction:rtl;color:#2a2417;border:6px double #b08d2d';
+    el.style.cssText='position:fixed;top:-9999px;right:0;width:760px;background:#fffdf7;padding:38px;font-family:Cairo,sans-serif;direction:rtl;color:#2a2417;border:6px double #b08d2d';
     el.innerHTML=`
-      <div style="text-align:center;border-bottom:2px solid #b08d2d;padding-bottom:14px;margin-bottom:20px">
-        <div style="font-family:Amiri,serif;font-size:18px;color:#b08d2d;margin-bottom:8px">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>
-        ${logoSrc?`<img src="${logoSrc}" style="width:88px;height:88px;object-fit:contain;border-radius:50%;border:2px solid #b08d2d;padding:2px">`:''}
-        <div style="font-family:Amiri,serif;font-size:24px;font-weight:700;color:#0b5d3b;margin-top:10px">مدرسة الحافظ لتعليم وتحفيظ القرآن الكريم</div>
-        <div style="font-size:14px;color:#7d745f;margin-top:4px">استمارة التقديم • العام القرآني 2026 - 2027</div>
+      <div style="text-align:center;border-bottom:2px solid #b08d2d;padding-bottom:16px;margin-bottom:24px">
+        <div style="font-size:22px;font-weight:700;color:#b08d2d;margin-bottom:10px">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>
+        ${logoSrc?`<img src="${logoSrc}" style="width:100px;height:100px;object-fit:contain;border-radius:50%;border:2px solid #b08d2d;padding:2px">`:''}
+        <div style="font-size:28px;font-weight:700;color:#0b5d3b;margin-top:12px">مدرسة الحافظ لتعليم وتحفيظ القرآن الكريم</div>
+        <div style="font-size:17px;color:#7d745f;margin-top:6px">استمارة التقديم • العام القرآني 2026 - 2027</div>
       </div>
-      <div style="display:flex;gap:22px;align-items:flex-start">
-        <table style="flex:1;border-collapse:collapse;font-size:15px;width:100%">
+      <div style="display:flex;gap:24px;align-items:flex-start">
+        <table style="flex:1;border-collapse:collapse;width:100%">
           ${row('الاسم', val('fullName'))}
           ${row('تاريخ الميلاد', val('birthDate'))}
           ${row('السن', val('ageCalc'))}
@@ -246,25 +268,28 @@
           ${row('السورة التي تم الوصول إليها', val('surah'))}
           ${row('القدرة الاستيعابية في الحلقة', val('capacity'))}
         </table>
-        ${photoSrc?`<div style="text-align:center"><img src="${photoSrc}" style="width:150px;height:170px;object-fit:cover;border:3px solid #b08d2d;border-radius:8px"><div style="font-size:12px;color:#7d745f;margin-top:6px">صورة الطالب</div></div>`:''}
+        ${photoSrc?`<div style="text-align:center"><img src="${photoSrc}" style="width:170px;height:195px;object-fit:cover;border:3px solid #b08d2d;border-radius:8px"><div style="font-size:14px;color:#7d745f;margin-top:8px">صورة الطالب</div></div>`:''}
       </div>
-      <div style="margin-top:26px;font-size:13px;color:#7d745f;text-align:center;border-top:1px solid #e6dcc1;padding-top:12px">تم إنشاء الاستمارة بتاريخ ${new Date().toLocaleDateString('ar-EG')}</div>`;
+      <div style="margin-top:30px;font-size:15px;color:#7d745f;text-align:center;border-top:1px solid #e6dcc1;padding-top:14px">تم إنشاء الاستمارة بتاريخ ${new Date().toLocaleDateString('ar-EG')}</div>`;
     document.body.appendChild(el);
     return el;
   }
 
-  function makePdf(){
+  function buildPdf(){
     const el=buildReport();
-    return html2canvas(el,{scale:2,backgroundColor:'#fffdf7'}).then(canvas=>{
-      document.body.removeChild(el);
-      const { jsPDF }=window.jspdf;
-      const pdf=new jsPDF('p','mm','a4');
-      const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
-      let imgW=pw-20, imgH=canvas.height*imgW/canvas.width;
-      if(imgH>ph-20){ imgH=ph-20; imgW=canvas.width*imgH/canvas.height; }
-      pdf.addImage(canvas.toDataURL('image/jpeg',0.95),'JPEG',(pw-imgW)/2,10,imgW,imgH);
-      pdf.save(`استمارة-قرآن-${val('fullName')||'طالب'}.pdf`);
-    }).catch(err=>{ if(el.parentNode) document.body.removeChild(el); alert('حصل خطأ أثناء إنشاء الـPDF: '+err.message); });
+    return document.fonts.ready
+      .then(()=>html2canvas(el,{scale:2,backgroundColor:'#fffdf7'}))
+      .then(canvas=>{
+        if(el.parentNode) document.body.removeChild(el);
+        const { jsPDF }=window.jspdf;
+        const pdf=new jsPDF('p','mm','a4');
+        const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
+        let imgW=pw-20, imgH=canvas.height*imgW/canvas.width;
+        if(imgH>ph-20){ imgH=ph-20; imgW=canvas.width*imgH/canvas.height; }
+        pdf.addImage(canvas.toDataURL('image/jpeg',0.95),'JPEG',(pw-imgW)/2,10,imgW,imgH);
+        return pdf;
+      })
+      .catch(err=>{ if(el.parentNode) document.body.removeChild(el); alert('حصل خطأ أثناء إنشاء الـPDF: '+(err&&err.message||err)); throw err; });
   }
 </script>
 </body>
